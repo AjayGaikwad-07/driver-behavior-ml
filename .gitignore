@@ -1,0 +1,27 @@
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Raw research data — keep local
+data/raw/
+
+# Generated EDA outputs
+day2_eda*/
+day2_eda_outputs/
+
+# Model artifacts
+models/
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+
+# Editor / OS files
+.vscode/
+.DS_Store
+Thumbs.db
