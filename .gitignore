@@ -1,51 +1,37 @@
-
-# Python
+# Python cache and environments
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 .env
 
-# Raw research data — keep local
+# Restricted raw research dataset — never upload
 data/raw/
 
 # Generated EDA outputs
 day2_eda*/
 day2_eda_outputs/
 
-# Model artifacts
-models/
-*.pkl
-*.joblib
-*.h5
-*.pt
-*.pth
-
-# Editor / OS files
-.vscode/
-.DS_Store
-Thumbs.db
-
-# Local datasets and experiment outputs
-data/raw/
-day2_eda_full/
-day2_eda_outputs/
-day2_eda*/
+# Day 3 local datasets and experiment outputs
 day3_working/
 day3_group_split/
+day3_balanced_group_split/
 day3_balanced_group_split_fast/
 day3_balanced_split_results/
 day3_baseline_results/
 day3_state_feature_results/
 day3_eval_audit/
 
-# Model artifacts and local Python environments
-*.joblib
+# Model artifacts
+models/
 *.pkl
 *.pickle
-.venv/
-venv/
-__pycache__/
-*.py[cod]
+*.joblib
+*.h5
+*.pt
+*.pth
 
-day3_balanced_group_split/
+# Editors and operating system files
+.vscode/
+.DS_Store
+Thumbs.db
