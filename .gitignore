@@ -35,3 +35,23 @@ models/
 .vscode/
 .DS_Store
 Thumbs.db
+# Day 5 generated demo outputs (keep locally)
+reports/
+data/demo/
+
+# Personal documents and unrelated study files
+*.pdf
+*.ipynb
+*.zip
+
+# Local generated model artifacts
+models/
+*.joblib
+*.pt
+*.pth
+
+# Large Day 4 prediction exports
+ day4_feature_ablation/*_predictions.csv
+
+# Large Day 4 prediction exports
+day4_feature_ablation/*_predictions.csv

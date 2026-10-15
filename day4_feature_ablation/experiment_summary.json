@@ -1,0 +1,20 @@
+{
+  "input": "C:\\Users\\ajayg\\OneDrive\\Desktop\\driver-behavior-ai\\day3_balanced_group_split_fast\\sampled_driver_data_balanced_group_split.csv",
+  "train_rows": 407462,
+  "test_rows": 173344,
+  "train_drivers": 393,
+  "test_drivers": 98,
+  "driver_overlap": 0,
+  "labels": [
+    "Camera off",
+    "Distraction",
+    "Drowsiness",
+    "Eating",
+    "No attention",
+    "Normal",
+    "Smoking",
+    "Unfastened belt",
+    "Using phone"
+  ],
+  "note": "Exploratory comparison on one held-out-driver split. Not a validated safety system. Investigate target provenance, driver-level label concentration and class distribution shift. Row-level metrics may be dominated by long recordings."
+}

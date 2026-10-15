@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 import warnings
 import pandas as pd
+import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.dummy import DummyClassifier
 from sklearn.impute import SimpleImputer
@@ -77,6 +78,9 @@ def main() -> int:
     with warnings.catch_warnings():
         warnings.simplefilter("default")
         model.fit(X_train, y_train)
+    Path("models").mkdir(exist_ok=True)
+    joblib.dump(model, "models/driver_behavior_rf.joblib")
+    print("Model saved successfully!")
     pred = model.predict(X_test)
     labels = sorted(train_classes | test_classes)
     report = classification_report(y_test, pred, labels=labels, output_dict=True, zero_division=0)

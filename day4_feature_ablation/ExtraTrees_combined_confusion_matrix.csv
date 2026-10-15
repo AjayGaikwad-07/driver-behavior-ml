@@ -1,0 +1,10 @@
+,Camera off,Distraction,Drowsiness,Eating,No attention,Normal,Smoking,Unfastened belt,Using phone
+Camera off,434,0,0,18105,0,59788,0,0,0
+Distraction,21,1093,3280,3,0,505,0,0,0
+Drowsiness,9,2014,8343,587,2745,496,23,0,16
+Eating,0,1,28,1236,7442,865,87,0,22
+No attention,0,0,56,711,4584,390,26,0,35
+Normal,2351,2083,1715,8500,2089,30678,30,5,51
+Smoking,0,0,1,0,774,0,0,0,0
+Unfastened belt,0,0,16,102,20,126,3,0,0
+Using phone,0,0,132,2774,7383,1389,155,0,22
