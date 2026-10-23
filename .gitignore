@@ -42,6 +42,7 @@ data/demo/
 # Personal documents and unrelated study files
 *.pdf
 *.ipynb
+!driver_behavior_colab_master.ipynb
 *.zip
 
 # Local generated model artifacts

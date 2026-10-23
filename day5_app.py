@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from datetime import datetime
 import json
@@ -26,16 +25,42 @@ FEATURES = [
     "perclos", "mouth_open_ratio"
 ]
 
+VISION_CLASSES = [
+    "person", "cell phone", "smartphone", "cigarette",
+    "person holding a cigarette", "person holding a mobile phone",
+    "car", "truck", "bus", "motorcycle",
+]
+VEHICLE_LABELS = {"car", "truck", "bus", "motorcycle"}
+
 st.title("🚗 AI Driver Behavior Monitoring")
 st.caption("Day 5 research prototype | Video + Sensor CSV + Trip Report")
 
+
 @st.cache_resource
 def load_models():
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"Sensor model not found: {MODEL_PATH}. "
+            "Make sure models/driver_behavior_rf.joblib exists."
+        )
     sensor = joblib.load(MODEL_PATH)
-    vision = YOLO("yolo11n.pt")
+
+    # Experimental open-vocabulary object detection; not a driver-action classifier.
+    vision = YOLO("yolov8s-worldv2.pt")
+    vision.set_classes(VISION_CLASSES)
     return sensor, vision
 
-sensor_model, vision_model = load_models()
+
+try:
+    sensor_model, vision_model = load_models()
+except Exception as exc:
+    st.error(f"Could not load the models: {exc}")
+    st.info(
+        "Install/update dependencies with: "
+        "`python -m pip install -U ultralytics streamlit opencv-python joblib pandas`"
+    )
+    st.stop()
+
 
 video_tab, sensor_tab, summary_tab = st.tabs(
     ["🎥 Video Analysis", "📡 Sensor Analysis", "📄 Reports"]
@@ -43,7 +68,9 @@ video_tab, sensor_tab, summary_tab = st.tabs(
 
 with video_tab:
     st.subheader("Recorded Trip Analysis")
-    upload = st.file_uploader("Optional: upload another video", type=["mp4", "avi", "mov"])
+    upload = st.file_uploader(
+        "Optional: upload another video", type=["mp4", "avi", "mov"]
+    )
 
     video_path = None
     if upload:
@@ -59,20 +86,19 @@ with video_tab:
         interval = st.select_slider(
             "Analyze every (seconds)", options=[0.5, 1, 2, 3], value=1
         )
+
         if st.button("▶ Analyze Trip", type="primary"):
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS) or 25
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
             duration = total_frames / fps if total_frames else 0
             step = max(1, int(fps * interval))
+
             events = []
             preview = st.empty()
             progress = st.progress(0.0)
             status = st.empty()
-            processed = 0
-            phone_frames = 0
-            person_frames = 0
-            total_objects = 0
+            processed = phone_frames = cigarette_frames = person_frames = total_objects = 0
 
             try:
                 frame_index = 0
@@ -84,33 +110,65 @@ with video_tab:
                     if frame_index % step:
                         continue
 
-                    result = vision_model.predict(
-                        frame, conf=0.35, verbose=False
-                    )[0]
+                    result = vision_model.predict(frame, conf=0.25, verbose=False)[0]
                     names = result.names
-                    detected = [
-                        names[int(box.cls[0])]
-                        for box in result.boxes
-                    ]
+                    detections = []
+
+                    for box in result.boxes:
+                        class_id = int(box.cls[0])
+                        label = (
+                            str(names.get(class_id, class_id))
+                            if isinstance(names, dict)
+                            else str(names[class_id])
+                        ).lower()
+                        detections.append({
+                            "label": label,
+                            "confidence": float(box.conf[0]),
+                        })
+
+                    detected = [item["label"] for item in detections]
                     processed += 1
                     total_objects += len(detected)
                     timestamp = frame_index / fps
 
-                    if "cell phone" in detected:
+                    phone_hits = [
+                        item for item in detections
+                        if "phone" in item["label"] or "smartphone" in item["label"]
+                    ]
+                    cigarette_hits = [
+                        item for item in detections if "cigarette" in item["label"]
+                    ]
+
+                    if phone_hits:
                         phone_frames += 1
                         events.append({
                             "timestamp_seconds": round(timestamp, 2),
-                            "event": "Cell phone object detected",
-                            "evidence": "YOLO object detection",
+                            "event": "Possible phone object detected",
+                            "confidence": round(max(x["confidence"] for x in phone_hits), 3),
+                            "evidence": "Experimental YOLO-World object detection",
                         })
+
+                    if cigarette_hits:
+                        cigarette_frames += 1
+                        events.append({
+                            "timestamp_seconds": round(timestamp, 2),
+                            "event": "Possible cigarette object detected",
+                            "confidence": round(max(x["confidence"] for x in cigarette_hits), 3),
+                            "evidence": "Experimental YOLO-World object detection",
+                        })
+
                     if "person" in detected:
                         person_frames += 1
 
-                    if any(x in detected for x in ["car", "truck", "bus", "motorcycle"]):
+                    vehicle_hits = [
+                        item for item in detections if item["label"] in VEHICLE_LABELS
+                    ]
+                    if vehicle_hits:
                         events.append({
                             "timestamp_seconds": round(timestamp, 2),
                             "event": "Vehicle object detected",
-                            "evidence": "YOLO object detection",
+                            "confidence": round(max(x["confidence"] for x in vehicle_hits), 3),
+                            "evidence": "Experimental YOLO-World object detection",
                         })
 
                     preview.image(
@@ -119,8 +177,7 @@ with video_tab:
                         use_container_width=True,
                     )
                     progress.progress(
-                        min(frame_index / total_frames, 1.0)
-                        if total_frames else 0.0
+                        min(frame_index / total_frames, 1.0) if total_frames else 0.0
                     )
                     status.write(
                         f"Time: {timestamp:.1f}s | Frames analyzed: {processed} "
@@ -129,12 +186,8 @@ with video_tab:
             finally:
                 cap.release()
 
-            event_df = pd.DataFrame(events)
-            if event_df.empty:
-                event_df = pd.DataFrame(columns=[
-                    "timestamp_seconds", "event", "evidence"
-                ])
-
+            event_columns = ["timestamp_seconds", "event", "confidence", "evidence"]
+            event_df = pd.DataFrame(events, columns=event_columns)
             report = {
                 "analysis_time": datetime.now().isoformat(timespec="seconds"),
                 "video": Path(video_path).name,
@@ -143,10 +196,12 @@ with video_tab:
                 "frames_analyzed": processed,
                 "person_detection_frames": person_frames,
                 "phone_detection_frames": phone_frames,
+                "cigarette_detection_frames": cigarette_frames,
                 "total_detected_objects_across_sampled_frames": total_objects,
                 "note": (
-                    "Object detections are not proof of distraction or drowsiness. "
-                    "Speed and harsh braking require suitable telemetry."
+                    "Phone/cigarette detections are experimental object-level signals, "
+                    "not proof of driver use or smoking. Drowsiness, speed, and harsh "
+                    "braking are not independently confirmed by this pipeline."
                 ),
             }
 
@@ -157,10 +212,18 @@ with video_tab:
             json_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
             st.success("Video analysis complete — report saved.")
-            a, b, c = st.columns(3)
+            a, b, c, d = st.columns(4)
             a.metric("Duration", f"{duration:.1f} sec")
             b.metric("Frames analyzed", processed)
             c.metric("Phone detection frames", phone_frames)
+            d.metric("Cigarette detection frames", cigarette_frames)
+
+            st.subheader("Timestamped events")
+            if event_df.empty:
+                st.info(
+                    "No phone, cigarette, or vehicle detections were returned for "
+                    "the sampled frames. This does not prove the objects were absent."
+                )
             st.dataframe(event_df, use_container_width=True)
             st.download_button(
                 "⬇ Download video event CSV",
@@ -174,9 +237,10 @@ with video_tab:
                 file_name=json_file.name,
                 mime="application/json",
             )
-            st.warning(
-                "This prototype detects general objects. It does not confirm "
-                "sleep, drowsiness, driver phone use, speed or harsh braking."
+            st.caption(
+                "Experimental AI results: object detections are not confirmation of "
+                "driver actions. Drowsiness, speed and harsh braking require separate "
+                "validated models or appropriate telemetry."
             )
     else:
         st.info("Place a video at data/demo/driving_demo.mp4 or upload one above.")
@@ -189,41 +253,60 @@ with sensor_tab:
 
     if csv_file:
         data = pd.read_csv(csv_file, low_memory=False)
-        missing = [c for c in FEATURES if c not in data.columns]
+        missing = [column for column in FEATURES if column not in data.columns]
         if missing:
             st.error("Missing feature columns: " + ", ".join(missing))
         else:
             X = data[FEATURES].apply(pd.to_numeric, errors="coerce")
+            if X.isna().any().any():
+                st.warning(
+                    "Some feature values are missing or non-numeric. Clean the CSV "
+                    "before predicting if the model rejects these rows."
+                )
+
             if st.button("🧠 Predict Sensor States"):
-                predictions = sensor_model.predict(X)
-                output = data.copy()
-                output["predicted_driver_state"] = predictions
+                try:
+                    predictions = sensor_model.predict(X)
+                    output = data.copy()
+                    output["predicted_driver_state"] = predictions
 
-                if hasattr(sensor_model, "predict_proba"):
-                    probabilities = sensor_model.predict_proba(X)
-                    output["model_confidence"] = probabilities.max(axis=1)
+                    if hasattr(sensor_model, "predict_proba"):
+                        probabilities = sensor_model.predict_proba(X)
+                        output["model_confidence"] = probabilities.max(axis=1)
 
-                st.success(f"Predictions generated for {len(output):,} rows.")
-                st.dataframe(
-                    output[["predicted_driver_state"]].head(30),
-                    use_container_width=True
-                )
-                st.download_button(
-                    "⬇ Download sensor predictions CSV",
-                    output.to_csv(index=False),
-                    file_name="sensor_predictions.csv",
-                    mime="text/csv",
-                )
+                    st.success(f"Predictions generated for {len(output):,} rows.")
+                    st.dataframe(
+                        output[["predicted_driver_state"]].head(30),
+                        use_container_width=True,
+                    )
+                    st.download_button(
+                        "⬇ Download sensor predictions CSV",
+                        output.to_csv(index=False),
+                        file_name="sensor_predictions.csv",
+                        mime="text/csv",
+                    )
 
-                if "dangerousstate" in output.columns:
-                    from sklearn.metrics import accuracy_score, f1_score
-                    actual = output["dangerousstate"].astype(str)
-                    pred = pd.Series(predictions).astype(str)
-                    st.metric("Accuracy on uploaded labelled CSV",
-                              f"{accuracy_score(actual, pred):.2%}")
-                    st.metric("Macro-F1 on uploaded labelled CSV",
-                              f"{f1_score(actual, pred, average='macro', zero_division=0):.3f}")
-                    st.caption("These metrics are meaningful only if this is an independent labelled evaluation set.")
+                    if "dangerousstate" in output.columns:
+                        from sklearn.metrics import accuracy_score, f1_score
+                        actual = output["dangerousstate"].astype(str)
+                        pred = pd.Series(predictions).astype(str)
+                        st.metric(
+                            "Accuracy on uploaded labelled CSV",
+                            f"{accuracy_score(actual, pred):.2%}",
+                        )
+                        st.metric(
+                            "Macro-F1 on uploaded labelled CSV",
+                            f"{f1_score(actual, pred, average='macro', zero_division=0):.3f}",
+                        )
+                        st.caption(
+                            "These metrics are meaningful only if this is an "
+                            "independent labelled evaluation set."
+                        )
+                except Exception as exc:
+                    st.error(f"Sensor prediction failed: {exc}")
+                    st.info(
+                        "Check numeric feature values and the model's expected schema."
+                    )
 
 with summary_tab:
     st.subheader("Project Progress — Days 1–5")
