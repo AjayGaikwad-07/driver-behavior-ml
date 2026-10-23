@@ -1,3 +1,7 @@
+import os
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
 from pathlib import Path
 from datetime import datetime
 import json
@@ -12,7 +16,10 @@ from ultralytics import YOLO
 st.set_page_config(page_title="Driver AI", page_icon="🚗", layout="wide")
 
 ROOT = Path(__file__).parent
-MODEL_PATH = ROOT / "models" / "driver_behavior_rf.joblib"
+COMPACT_MODEL_PATH = ROOT / "models" / "driver_behavior_rf_compact.joblib"
+FULL_MODEL_PATH = ROOT / "models" / "driver_behavior_rf.joblib"
+MODEL_PATH = COMPACT_MODEL_PATH if COMPACT_MODEL_PATH.exists() else FULL_MODEL_PATH
+
 DEFAULT_VIDEO = ROOT / "data" / "demo" / "driving_demo.mp4"
 REPORT_DIR = ROOT / "reports"
 REPORT_DIR.mkdir(exist_ok=True)
@@ -38,28 +45,36 @@ st.caption("Day 5 research prototype | Video + Sensor CSV + Trip Report")
 
 @st.cache_resource
 def load_models():
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"Sensor model not found: {MODEL_PATH}. "
-            "Make sure models/driver_behavior_rf.joblib exists."
-        )
-    sensor = joblib.load(MODEL_PATH)
+    sensor = None
+    vision = None
+    # 1. Load sensor model
+    for p in [COMPACT_MODEL_PATH, FULL_MODEL_PATH]:
+        if p.exists():
+            try:
+                sensor = joblib.load(p)
+                break
+            except Exception as e:
+                pass
+                
+    # 2. Load vision model
+    try:
+        if Path("yolov8s-worldv2.pt").exists():
+            vision = YOLO("yolov8s-worldv2.pt")
+            vision.set_classes(VISION_CLASSES)
+        elif Path("yolov8n.pt").exists():
+            vision = YOLO("yolov8n.pt")
+        else:
+            vision = YOLO("yolov8n.pt")
+    except Exception as e:
+        st.warning(f"Vision model note: {e}")
 
-    # Experimental open-vocabulary object detection; not a driver-action classifier.
-    vision = YOLO("yolov8s-worldv2.pt")
-    vision.set_classes(VISION_CLASSES)
     return sensor, vision
 
 
-try:
-    sensor_model, vision_model = load_models()
-except Exception as exc:
-    st.error(f"Could not load the models: {exc}")
-    st.info(
-        "Install/update dependencies with: "
-        "`python -m pip install -U ultralytics streamlit opencv-python joblib pandas`"
-    )
-    st.stop()
+sensor_model, vision_model = load_models()
+if sensor_model is None:
+    st.warning("⚠️ Sensor model could not be loaded into memory. Video analysis remains fully operational.")
+
 
 
 video_tab, sensor_tab, summary_tab = st.tabs(
@@ -265,6 +280,9 @@ with sensor_tab:
                 )
 
             if st.button("🧠 Predict Sensor States"):
+                if sensor_model is None:
+                    st.error("Sensor model is not currently available in memory.")
+                    st.stop()
                 try:
                     predictions = sensor_model.predict(X)
                     output = data.copy()
