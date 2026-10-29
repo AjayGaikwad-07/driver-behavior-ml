@@ -35,14 +35,17 @@ models/
 .vscode/
 .DS_Store
 Thumbs.db
-# Day 5 generated demo outputs (keep locally)
+# Day 5 generated demo outputs (keep video locally, allow sample CSV)
 reports/
-data/demo/
+data/demo/*.mp4
+data/demo/*.avi
+data/demo/*.mov
 
 # Personal documents and unrelated study files
 *.pdf
 *.ipynb
 !driver_behavior_colab_master.ipynb
+!driver_behavior_colab_FINAL.ipynb
 *.zip
 
 # Local generated model artifacts
