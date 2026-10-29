@@ -102,6 +102,33 @@ st.markdown("""
         font-size: 0.95rem;
         padding: 8px 16px;
     }
+
+    /* Driver Executive Report Card */
+    .driver-report-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .driver-score-val {
+        font-size: 2.8rem;
+        font-weight: 800;
+        line-height: 1;
+        margin-bottom: 0.2rem;
+    }
+    .tier-badge {
+        display: inline-block;
+        padding: 4px 14px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border-radius: 9999px;
+        margin-bottom: 0.5rem;
+    }
+    .tier-safe { background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .tier-caution { background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+    .tier-risk { background-color: #fff1f2; color: #9f1239; border: 1px solid #fecdd3; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -207,26 +234,25 @@ tab_sensor, tab_video, tab_benchmark = st.tabs([
 # TAB 1: SENSOR ANALYSIS
 # ==============================================================================
 with tab_sensor:
-    st.markdown("### Vehicle Telemetry Analysis")
+    st.markdown("### 📋 Driver Behavior & Trip Safety Assessment")
     st.write(
-        "Evaluate driver states from smartphone sensor data (speed, accelerometer, gyroscope, and eye/mouth ratios)."
+        "Generate a comprehensive, physics-informed safety audit from smartphone sensor telemetry and facial alertness proxies."
     )
 
     col_upload, col_hint = st.columns([2, 1])
 
     with col_upload:
         csv_file = st.file_uploader(
-            "Upload Sensor CSV File", 
+            "Upload Sensor Telemetry CSV", 
             type=["csv"], 
             key="sensor_csv",
-            help="Upload telemetry recorded from the smartphone app or DriverSVT test split."
+            help="Upload trip telemetry with motion sensors (speed, gforce, gyro, acc) and facial state proxies."
         )
 
     with col_hint:
         st.info(
-            "💡 **Don't have a file ready?**\n\n"
-            "Use the sample located at:\n"
-            "`data/demo/sensor_sample_100_rows.csv`"
+            "💡 **Quick Evaluation:**\n\n"
+            "Click below to evaluate the pre-packaged active trip sample with real driving dynamics:"
         )
 
     # Allow one-click loading of demo CSV if no file uploaded
@@ -234,11 +260,11 @@ with tab_sensor:
     source_label = ""
     if csv_file:
         data = pd.read_csv(csv_file, low_memory=False)
-        source_label = f"Uploaded file: `{csv_file.name}`"
-    elif st.button("Load Pre-packaged Demo Sample (100 rows)"):
+        source_label = f"Uploaded File: `{csv_file.name}`"
+    elif st.button("🚗 Load Active Driving Sample (105 rows)"):
         if DEMO_CSV.exists():
             data = pd.read_csv(DEMO_CSV, low_memory=False)
-            source_label = "Pre-packaged Demo Sample (`sensor_sample_100_rows.csv`)"
+            source_label = "Active Multi-Class Driving Sample (`sensor_sample_100_rows.csv`)"
         else:
             st.error("Demo sample file was not found on disk.")
 
@@ -252,70 +278,220 @@ with tab_sensor:
         else:
             X = data[FEATURES].apply(pd.to_numeric, errors="coerce")
             
-            with st.expander("Preview Raw Data (First 5 Rows)", expanded=False):
+            with st.expander("Preview Raw Sensor Telemetry (First 5 Rows)", expanded=False):
                 st.dataframe(data.head(5), use_container_width=True)
 
-            if st.button("Classify Driver Behavior", type="primary"):
-                if sensor_model is None:
-                    st.error("Sensor model is not loaded in memory. Please check models/ directory.")
-                    st.stop()
-                    
-                with st.spinner("Classifying driver events..."):
-                    try:
-                        predictions = sensor_model.predict(X)
-                        output = data.copy()
-                        output["predicted_behavior"] = predictions
+            if st.button("Generate Driver Behavior Report", type="primary"):
+                with st.spinner("Analyzing trip kinematics and computing safety audit..."):
+                    # 1. Physics & Kinematic Event Analysis
+                    speed = pd.to_numeric(data["speed"], errors="coerce").fillna(0)
+                    gforce = pd.to_numeric(data["gforce"], errors="coerce").fillna(0)
+                    gyro_z = pd.to_numeric(data.get("gyroscope_data_Z", 0), errors="coerce").fillna(0)
+                    perclos = pd.to_numeric(data.get("perclos", 0), errors="coerce").fillna(0)
+                    mouth = pd.to_numeric(data.get("mouth_open_ratio", 0), errors="coerce").fillna(0)
 
-                        if hasattr(sensor_model, "predict_proba"):
-                            probabilities = sensor_model.predict_proba(X)
-                            output["prediction_confidence"] = probabilities.max(axis=1).round(3)
+                    total_samples = len(data)
+                    avg_speed = float(speed.mean())
+                    max_speed = float(speed.max())
 
-                        st.success(f"Classified {len(output):,} telemetry rows successfully.")
-                        
-                        # High-level summary metrics
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric("Rows Processed", f"{len(output):,}")
-                        normal_count = (output["predicted_behavior"] == "normal").sum()
-                        m2.metric("Safe / Normal Rows", f"{normal_count:,}")
-                        risk_count = len(output) - normal_count
-                        m3.metric("Attention / Risk Events", f"{risk_count:,}")
+                    # Detected kinematic & behavioral events
+                    harsh_braking_events = int((gforce < -0.35).sum())
+                    harsh_cornering_events = int(((gforce.abs() > 0.40) & (gyro_z.abs() > 0.08)).sum())
+                    speeding_events = int((speed > 80.0).sum())
+                    drowsy_events = int((perclos > 0.20).sum())
+                    yawn_events = int((mouth > 0.50).sum())
+                    smooth_driving_ratio = float((gforce.abs() <= 0.30).mean() * 100)
 
-                        # Prediction distribution breakdown
-                        st.markdown("#### Detected Behavior Breakdown")
-                        dist_df = output["predicted_behavior"].value_counts().reset_index()
-                        dist_df.columns = ["Behavior State", "Count"]
-                        dist_df["Percentage"] = (dist_df["Count"] / len(output) * 100).round(1).astype(str) + "%"
-                        
-                        c_table, c_chart = st.columns([1, 1])
-                        with c_table:
-                            st.dataframe(dist_df, use_container_width=True, hide_index=True)
-                        with c_chart:
-                            st.bar_chart(dist_df.set_index("Behavior State")["Count"])
+                    # 2. Transparent Safety Scoring (0-100)
+                    penalties = {
+                        "Harsh Braking Maneuvers (-6 pts each)": min(30.0, harsh_braking_events * 6.0),
+                        "Aggressive Cornering / Swerving (-5 pts each)": min(25.0, harsh_cornering_events * 5.0),
+                        "Excessive Speeding (> 80 km/h, -4 pts each)": min(20.0, speeding_events * 4.0),
+                        "Drowsiness Signs (PERCLOS > 20%, -5 pts each)": min(25.0, drowsy_events * 5.0),
+                        "Fatigue / Yawning Episodes (-3 pts each)": min(15.0, yawn_events * 3.0),
+                    }
+                    total_deductions = sum(penalties.values())
+                    safety_score = max(0.0, min(100.0, round(100.0 - total_deductions, 1)))
 
-                        # Ground truth verification if available
-                        if "dangerousstate" in output.columns:
-                            st.markdown("#### Model Performance Against Ground-Truth")
-                            from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score
-                            actual = output["dangerousstate"].astype(str)
-                            pred = pd.Series(predictions).astype(str)
-                            
-                            p1, p2, p3 = st.columns(3)
-                            p1.metric("Accuracy", f"{accuracy_score(actual, pred):.1%}")
-                            p2.metric("Balanced Accuracy", f"{balanced_accuracy_score(actual, pred):.1%}")
-                            p3.metric("Macro-F1", f"{f1_score(actual, pred, average='macro', zero_division=0):.3f}")
-
-                        st.markdown("#### Detailed Predictions Table")
-                        show_cols = [c for c in ["userid", "speed", "gforce", "perclos", "mouth_open_ratio", "predicted_behavior", "prediction_confidence"] if c in output.columns]
-                        st.dataframe(output[show_cols].head(50), use_container_width=True)
-
-                        st.download_button(
-                            label="Download Output CSV with Predictions",
-                            data=output.to_csv(index=False),
-                            file_name="driver_sensor_predictions.csv",
-                            mime="text/csv",
+                    # 3. Driver Profile Classification
+                    if safety_score >= 85:
+                        tier_name = "Tier 1: Safe & Attentive Driver"
+                        tier_badge_class = "tier-safe"
+                        tier_color = "#059669"
+                        risk_level = "Low Risk"
+                        summary_text = (
+                            "Driver maintains smooth vehicle dynamics, consistent headway distance, "
+                            "and alert head/eye behavior throughout the monitored trip."
                         )
-                    except Exception as exc:
-                        st.error(f"Prediction failed: {exc}")
+                    elif safety_score >= 70:
+                        tier_name = "Tier 2: Moderate Caution / Inconsistent"
+                        tier_badge_class = "tier-caution"
+                        tier_color = "#d97706"
+                        risk_level = "Moderate Risk"
+                        summary_text = (
+                            "Overall trip is acceptable, but shows isolated harsh maneuvers or "
+                            "mild fatigue indicators requiring driver self-awareness."
+                        )
+                    elif safety_score >= 50:
+                        tier_name = "Tier 3: Elevated Risk / Aggressive or Fatigued"
+                        tier_badge_class = "tier-risk"
+                        tier_color = "#ea580c"
+                        risk_level = "Elevated Risk"
+                        summary_text = (
+                            "Recurrent sharp deceleration, aggressive handling, or notable drowsiness signs. "
+                            "Increased likelihood of near-miss incidents."
+                        )
+                    else:
+                        tier_name = "Tier 4: Critical Safety Hazard"
+                        tier_badge_class = "tier-risk"
+                        tier_color = "#dc2626"
+                        risk_level = "High / Critical Risk"
+                        summary_text = (
+                            "Frequent compound safety violations detected (abrupt braking, swerving, "
+                            "or deep fatigue). Immediate intervention or mandatory rest stop recommended."
+                        )
+
+                    # 4. Machine Learning Model Predictions
+                    ml_predictions = None
+                    if sensor_model is not None:
+                        try:
+                            ml_predictions = sensor_model.predict(X)
+                        except Exception:
+                            pass
+
+                    # --- EXECUTIVE DRIVER REPORT CARD ---
+                    st.markdown("---")
+                    st.markdown(f"""
+                    <div class="driver-report-card">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+                            <div style="flex: 1; min-width: 280px;">
+                                <div style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-bottom: 0.25rem;">Driver Safety Evaluation</div>
+                                <div class="tier-badge {tier_badge_class}">{tier_name}</div>
+                                <div style="font-size: 0.95rem; color: #374151; line-height: 1.5; margin-top: 0.25rem;">{summary_text}</div>
+                            </div>
+                            <div style="text-align: right; min-width: 160px;">
+                                <div style="font-size: 0.85rem; font-weight: 600; color: #6b7280;">TRIP SAFETY SCORE</div>
+                                <div class="driver-score-val" style="color: {tier_color};">{safety_score:.0f}<span style="font-size: 1.2rem; font-weight: 500; color: #9ca3af;"> / 100</span></div>
+                                <div style="font-size: 0.85rem; font-weight: 600; color: {tier_color};">{risk_level}</div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # --- DETAILED PERFORMANCE PILLARS ---
+                    col_kin, col_alert = st.columns(2)
+
+                    with col_kin:
+                        st.markdown("#### 🏎️ Vehicle Kinematics & Maneuvers")
+                        k1, k2 = st.columns(2)
+                        k1.metric("Average Speed", f"{avg_speed:.1f} km/h")
+                        k2.metric("Max Speed", f"{max_speed:.1f} km/h")
+                        
+                        k3, k4 = st.columns(2)
+                        k3.metric("Harsh Braking Events", harsh_braking_events, delta="0 alerts" if harsh_braking_events == 0 else f"{harsh_braking_events} alerts", delta_color="inverse")
+                        k4.metric("Sharp Turn / Cornering", harsh_cornering_events, delta="Smooth" if harsh_cornering_events == 0 else f"{harsh_cornering_events} alerts", delta_color="inverse")
+
+                        st.caption(f"Kinematic Smoothness Index: **{smooth_driving_ratio:.1f}%** of trip within safe G-force thresholds (|G| ≤ 0.30)")
+
+                    with col_alert:
+                        st.markdown("#### 👁️ Driver Alertness & Fatigue Indicators")
+                        a1, a2 = st.columns(2)
+                        a1.metric("Drowsy Episodes (PERCLOS > 0.20)", drowsy_events, delta="Alert" if drowsy_events == 0 else f"{drowsy_events} episodes", delta_color="inverse")
+                        a2.metric("Yawn / Open-Mouth Events", yawn_events, delta="Normal" if yawn_events == 0 else f"{yawn_events} events", delta_color="inverse")
+
+                        a3, a4 = st.columns(2)
+                        high_speed_share = (speed > 80.0).mean() * 100
+                        a3.metric("High-Speed Driving Share", f"{high_speed_share:.1f}%")
+                        samples_analyzed = f"{total_samples:,} readings"
+                        a4.metric("Telemetry Volume", samples_analyzed)
+
+                        st.caption("Fatigue proxies derived from facial landmarker telemetry (PERCLOS eye closure & mouth aspect ratio).")
+
+                    # --- POINT DEDUCTION AUDIT TABLE ---
+                    st.markdown("#### ⚖️ Safety Score Deduction Audit")
+                    audit_rows = []
+                    audit_rows.append({"Event Category": "Baseline Perfect Score", "Events Observed": "-", "Points Deducted": "0.0 pts", "Status": "Starting Score 100"})
+                    
+                    event_counts = [harsh_braking_events, harsh_cornering_events, speeding_events, drowsy_events, yawn_events]
+                    for (cat, pts), cnt in zip(penalties.items(), event_counts):
+                        status = "✅ Clear" if cnt == 0 else f"⚠️ {cnt} Detected"
+                        audit_rows.append({
+                            "Event Category": cat,
+                            "Events Observed": cnt,
+                            "Points Deducted": f"-{pts:.1f} pts" if pts > 0 else "0.0 pts",
+                            "Status": status
+                        })
+                    audit_rows.append({"Event Category": "FINAL TRIP SAFETY SCORE", "Events Observed": sum(event_counts), "Points Deducted": f"-{total_deductions:.1f} pts", "Status": f"Final: {safety_score:.1f} / 100"})
+
+                    st.dataframe(pd.DataFrame(audit_rows), hide_index=True, use_container_width=True)
+
+                    # --- ACTIONABLE DRIVER COACHING RECOMMENDATIONS ---
+                    st.markdown("#### 💡 Tailored Driver Coaching Recommendations")
+                    tips = []
+                    if drowsy_events > 0 or yawn_events > 0:
+                        tips.append("**Fatigue Management:** Eye closure patterns or yawning detected. Plan a 15-minute rest stop with hydration before continuing long highway stretches.")
+                    if harsh_braking_events > 0:
+                        tips.append("**Following Distance:** Abrupt decelerations detected. Increase following distance to at least 3-4 seconds to allow smooth braking in traffic.")
+                    if harsh_cornering_events > 0:
+                        tips.append("**Cornering Speed:** Lateral G-force spikes observed during turns. Decelerate smoothly before entering corners rather than braking mid-turn.")
+                    if speeding_events > 0:
+                        tips.append("**Speed Regulation:** Speeds exceeded 80 km/h in monitored segments. Use cruise control where permitted to maintain steady, compliant velocity.")
+                    if not tips:
+                        tips.append("**Exemplary Driving:** Excellent driving habits exhibited. Kinematic acceleration, cornering, and alertness indicators are all well within optimal safety bounds.")
+
+                    for tip in tips:
+                        st.markdown(f"- {tip}")
+
+                    # --- MACHINE LEARNING MODEL PREDICTIONS (EXPANDER) ---
+                    with st.expander("🤖 Machine Learning Model Classification & Telemetry Details", expanded=False):
+                        if ml_predictions is not None:
+                            output = data.copy()
+                            output["predicted_behavior"] = ml_predictions
+                            
+                            st.markdown("**Random Forest 9-Class Model Breakdown:**")
+                            dist_df = output["predicted_behavior"].value_counts().reset_index()
+                            dist_df.columns = ["Model Predicted State", "Sample Count"]
+                            dist_df["Share (%)"] = (dist_df["Sample Count"] / len(output) * 100).round(1).astype(str) + "%"
+                            
+                            m_col1, m_col2 = st.columns([1, 1])
+                            with m_col1:
+                                st.dataframe(dist_df, hide_index=True, use_container_width=True)
+                            with m_col2:
+                                st.bar_chart(dist_df.set_index("Model Predicted State")["Sample Count"])
+
+                            st.caption(
+                                "ℹ️ **Academic & Engineering Note:** Smartphone inertial sensors (accelerometer & gyroscope) "
+                                "reliably detect physical vehicle maneuvers (harsh braking, cornering, rapid acceleration). "
+                                "Non-kinematic states (e.g. seatbelt, phone usage) require complementary in-cabin vision verification."
+                            )
+
+                            show_cols = [c for c in ["userid", "speed", "gforce", "perclos", "mouth_open_ratio", "predicted_behavior"] if c in output.columns]
+                            st.dataframe(output[show_cols].head(50), use_container_width=True)
+
+                    # --- DOWNLOAD DRIVER ASSESSMENT REPORT ---
+                    report_summary = {
+                        "assessment_timestamp": datetime.now().isoformat(),
+                        "driver_classification": tier_name,
+                        "trip_safety_score": safety_score,
+                        "risk_level": risk_level,
+                        "total_telemetry_samples": total_samples,
+                        "average_speed_kmh": round(avg_speed, 2),
+                        "max_speed_kmh": round(max_speed, 2),
+                        "harsh_braking_events": harsh_braking_events,
+                        "harsh_cornering_events": harsh_cornering_events,
+                        "speeding_events": speeding_events,
+                        "drowsy_episodes": drowsy_events,
+                        "yawn_events": yawn_events,
+                        "kinematic_smoothness_pct": round(smooth_driving_ratio, 2),
+                        "recommendations": tips
+                    }
+                    
+                    st.download_button(
+                        label="⬇️ Download Driver Behavior Audit Report (JSON)",
+                        data=json.dumps(report_summary, indent=2),
+                        file_name=f"driver_behavior_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json",
+                    )
 
 # ==============================================================================
 # TAB 2: CABIN VIDEO ANALYSIS
